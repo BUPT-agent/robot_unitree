@@ -10,6 +10,7 @@ from robot_client import RobotClient
 from brain import RobotBrain
 # 注意这里引入的是新的 BackgroundEars
 from ears import BackgroundEars
+from concurrent.futures import ThreadPoolExecutor
 
 # === 初始化核心模块 ===
 robot = RobotClient()
@@ -137,20 +138,49 @@ def main_loop():
                 # 鉴于目前逻辑，在这里同步等待 Brain 结果是可以接受的，
                 # 因为耳朵线程依然在后台继续缓存新的话。
 
-                # 1. 分析动作
-                # action_data = brain.analyze_action(user_text)
+                # ==========================================
+                # A.2 核心交互流程 (并发极速版)
+                # ==========================================
 
-                # 2. 生成回复
-                reply = brain.get_chat_reply(user_text)
+                print("⚡️ Parallel Processing: Thinking & Acting...")
 
-                # 3. 执行 (多线程并发)
+                # 定义结果变量
+                action_data = None
+                reply = None
+
+                # 使用线程池同时发起两个 LLM 请求
+                # max_workers=2 表示开启两个线程分别处理动作判断和对话生成
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    # 提交任务：判断动作
+                    future_action = executor.submit(brain.analyze_action, user_text)
+
+                    # 提交任务：生成回复
+                    # 注意：并行执行时，无法将 action_data 传给 get_chat_reply，
+                    # 因为此时动作还没判断出来。不过不用担心，大模型会根据 user_text 自动生成合适的回答。
+                    future_reply = executor.submit(brain.get_chat_reply, user_text)
+
+                    # 等待两个请求全部完成 (耗时取决于最慢的那个请求)
+                    action_data = future_action.result()
+                    reply = future_reply.result()
+
+                # ==========================================
+                # A.3 并发执行 (Execution)
+                # ==========================================
+                # 拿到结果后，同时启动“说话线程”和“动作线程”
+
+                # 1. 启动说话
                 if reply:
                     print(f"🗣️ Robot says: {reply}")
                     threading.Thread(target=robot.speak, args=(reply,)).start()
 
-                # if action_data:
-                #     print(f"🦾 Robot acts: {action_data['desc']}")
-                #     threading.Thread(target=robot.perform_action, args=(action_data,)).start()
+                # 2. 启动动作
+                if action_data:
+                    print(f"🦾 Robot acts: {action_data['desc']}")
+                    threading.Thread(target=robot.perform_action, args=(action_data,)).start()
+
+                # (可选) 如果不希望机器人一边说话一边录入自己的声音，可以在这里简单等待说话结束
+                # 或者依靠 ears 的降噪/回声消除
+                # time.sleep(len(reply) * 0.2)
 
             else:
                 # ==========================================
