@@ -5,7 +5,7 @@ import random
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 
-from config import INTERRUPT_KEYWORDS
+from config import INTERRUPT_KEYWORDS, FILLER_PHRASES
 from robot_client import RobotClient
 from brain import RobotBrain
 # 注意这里引入的是新的 BackgroundEars
@@ -70,139 +70,119 @@ def director_action():
 def run_flask():
     app.run(host='0.0.0.0', port=5000, use_reloader=False)
 
-
 # === 核心逻辑：主循环 ===
 def main_loop():
-    # 1. 启动耳朵线程 (它会自己一直在后台听，把字存进队列)
+    # 1. 启动耳朵线程
     ears.start()
-
     print(">>> System Ready. High-Performance Event Loop Started.")
 
-    # 空闲计时
     last_interaction_time = time.time()
     idle_threshold = random.randint(15, 30)
 
     while True:
-        # 这个循环现在运行得非常快 (每秒几十次)
-        # 它可以瞬间响应网页指令，或者瞬间处理缓存里的语音
-
         # ==========================================
-        # 1. 检查网页指令 (最高优先级)
+        # 1. 检查网页指令 (保持不变)
         # ==========================================
         try:
             web_task = director_queue.get_nowait()
             last_interaction_time = time.time()
-
-            # 网页指令来了，先把语音缓存清空，防止处理旧语音
             ears.clear_queue()
 
             if web_task[0] == 'speak':
                 print(f"📡 Web Speak: {web_task[1]}")
                 brain.update_history("assistant", web_task[1])
-                # 使用线程发送，避免阻塞主循环
                 threading.Thread(target=robot.speak, args=(web_task[1],)).start()
-
             elif web_task[0] == 'action':
                 print(f"📡 Web Action: {web_task[1]}")
                 threading.Thread(target=robot.perform_action, args=(web_task[1],)).start()
-
-            continue  # 处理完立刻进入下一次循环
+            continue
         except queue.Empty:
             pass
 
         # ==========================================
-        # 2. 检查语音缓存 (Auto Mode)
+        # 2. 检查语音缓存 (Auto Mode) - 修改了这里
         # ==========================================
         if current_mode == "auto":
-            # 这里不再阻塞等待！直接看缓存队列里有没有货
             user_text = ears.get_latest_text()
 
             if user_text:
-                print(f"📨 Processing Buffer: {user_text}")
+                t_received = time.time()
+                print(f"\n[TIMING] 📨 Received: '{user_text}'")
 
                 # 重置空闲计时
                 last_interaction_time = time.time()
                 idle_threshold = random.randint(15, 30)
 
-                # A. 打断检测 (最高优先级)
+                # A. 打断检测
                 if any(k in user_text for k in INTERRUPT_KEYWORDS):
                     print("🛑 Interrupt detected!")
                     robot.stop_all()
-                    ears.clear_queue()  # 既然打断了，后面的缓存也没必要处理了
+                    ears.clear_queue()
                     continue
 
-                # B. 核心 AI 处理
-                # 这一步是耗时的 (HTTP请求)，为了不卡住主循环去接收新的语音，
-                # 我们可以选择在这里阻塞一下 (简单做法)，
-                # 或者把 AI 处理也丢进线程池 (复杂做法)。
-                # 鉴于目前逻辑，在这里同步等待 Brain 结果是可以接受的，
-                # 因为耳朵线程依然在后台继续缓存新的话。
-
                 # ==========================================
-                # A.2 核心交互流程 (并发极速版)
+                # ⚡️ 极速响应逻辑 (Instant Feedback)
                 # ==========================================
 
-                print("⚡️ Parallel Processing: Thinking & Acting...")
+                # # 1. 【立即】播放“填空词” (Filler)
+                # # 这一步是毫秒级的，用户说完话立刻就能听到反馈
+                # filler = random.choice(FILLER_PHRASES)
+                # print(f"🗣️ [Fast Ack] Speaking filler: {filler}")
+                # # 注意：这里使用线程播放，确保不阻塞后面的大脑思考
+                # threading.Thread(target=robot.speak, args=(filler,)).start()
 
-                # 定义结果变量
+                # ==========================================
+                # 🧠 并行思考 (Parallel Thinking)
+                # ==========================================
+                # 在机器人念叨“嗯，让我想想...”的同时，大脑疯狂运转
+                print("⚡️ Processing LLM in background...")
+
                 action_data = None
                 reply = None
 
-                # 使用线程池同时发起两个 LLM 请求
-                # max_workers=2 表示开启两个线程分别处理动作判断和对话生成
+                # 使用线程池并行请求 Action 和 Reply
                 with ThreadPoolExecutor(max_workers=2) as executor:
-                    # 提交任务：判断动作
                     future_action = executor.submit(brain.analyze_action, user_text)
-
-                    # 提交任务：生成回复
-                    # 注意：并行执行时，无法将 action_data 传给 get_chat_reply，
-                    # 因为此时动作还没判断出来。不过不用担心，大模型会根据 user_text 自动生成合适的回答。
                     future_reply = executor.submit(brain.get_chat_reply, user_text)
 
-                    # 等待两个请求全部完成 (耗时取决于最慢的那个请求)
+                    # 等待结果 (此时机器人可能正在播放 Filler，或者刚播完)
                     action_data = future_action.result()
                     reply = future_reply.result()
 
-                # ==========================================
-                # A.3 并发执行 (Execution)
-                # ==========================================
-                # 拿到结果后，同时启动“说话线程”和“动作线程”
+                # 计算思考耗时
+                think_duration = time.time() - t_received
+                print(f"✅ Thinking done in {think_duration:.2f}s")
 
-                # 1. 启动说话
+                # ==========================================
+                # 🎬 最终执行 (Final Execution)
+                # ==========================================
+
+                # 1. 播放正式回复
+                # 语音合成通常有队列机制。如果 Filler 还没说完，这句话会自动排在后面。
                 if reply:
-                    print(f"🗣️ Robot says: {reply}")
+                    print(f"🗣️ Robot Reply: {reply}")
                     threading.Thread(target=robot.speak, args=(reply,)).start()
 
-                # 2. 启动动作
+                # 2. 执行动作
+                # 动作也应该并行触发，不要等话说完才动
                 if action_data:
-                    print(f"🦾 Robot acts: {action_data['desc']}")
+                    print(f"🦾 Robot Act: {action_data.get('desc', 'Unknown')}")
                     threading.Thread(target=robot.perform_action, args=(action_data,)).start()
-
-                # (可选) 如果不希望机器人一边说话一边录入自己的声音，可以在这里简单等待说话结束
-                # 或者依靠 ears 的降噪/回声消除
-                # time.sleep(len(reply) * 0.2)
 
             else:
                 # ==========================================
-                # 3. 空闲检测 (Idle Logic)
+                # 3. 空闲检测 (保持不变)
                 # ==========================================
-                # 只有在没有网页指令、也没有语音缓存时才检查空闲
                 if time.time() - last_interaction_time > idle_threshold:
                     print(f"💤 Idle triggered...")
-
                     idle_text, idle_action = brain.trigger_idle_behavior()
-
                     if idle_text:
-                        print(f"🤖 Idle Reply: {idle_text}")
                         threading.Thread(target=robot.speak, args=(idle_text,)).start()
-
                         if idle_action:
                             threading.Thread(target=robot.perform_action, args=(idle_action,)).start()
-
                     last_interaction_time = time.time()
                     idle_threshold = random.randint(10, 20)
 
-        # 极短的休眠，防止 CPU 占用 100%，同时保证反应极快
         time.sleep(0.02)
 
 

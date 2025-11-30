@@ -1,6 +1,4 @@
 from openai import OpenAI
-import json
-import random
 from config import ACTION_MAP, get_action_prompt_text, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 
 
@@ -12,7 +10,7 @@ class RobotBrain:
         # === 记忆模块配置 ===
         self.history = []
         # 10轮对话 = 10条用户消息 + 10条助手消息 = 20条记录
-        self.max_history_items = 20
+        self.max_history_items = 2
 
         # === 动作判断 Prompt ===
         self.action_system_prompt = (
@@ -67,15 +65,7 @@ class RobotBrain:
         获取回复 (包含历史上下文 + 动作上下文)
         """
         # 1. 构建系统提示词
-        system_prompt = "你是一个Unitree G1机器人助手，性格活泼、幽默。请用口语化、简短的方式回答用户，字数控制在40字以内。"
-
-        # 如果当前有动作要执行，注入动作上下文
-        if action_data:
-            action_desc = action_data.get('desc', '未知动作')
-            system_prompt += (
-                f"\n【重要状态】你即将执行物理动作：“{action_desc}”。"
-                "请务必结合这个动作来回复用户，做到言行合一。"
-            )
+        system_prompt = "你是一个Unitree G1机器人助手，性格活泼、幽默。请用口语化、简短的方式回答用户，字数控制在30字以内。"
 
         # 2. 构建完整消息链：System -> History -> Current User Input
         messages = [{"role": "system", "content": system_prompt}]

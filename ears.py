@@ -1,42 +1,77 @@
 import sys
+import json
 import queue
+import os
+import time
 import speech_recognition as sr
+from vosk import Model, KaldiRecognizer
 from config import MIC_DEVICE_INDEX
+
+# 设置你的 Vosk 模型路径
+VOSK_MODEL_PATH = "model/vosk-model-small-cn-0.22"
 
 
 class BackgroundEars:
-    def __init__(self):
-        # 初始化识别器
+    def __init__(self, engine_type='vosk'):
+        """
+        初始化耳朵
+        :param engine_type: 'google' (在线) 或 'vosk' (离线本地)
+        """
+        self.engine_type = engine_type
         self.recognizer = sr.Recognizer()
-        # 语音缓存队列
         self.msg_queue = queue.Queue()
-        # 用于存储停止监听的函数
         self.stop_listening_func = None
 
-        # 可选：动态调整能量阈值（灵敏度）
+        # ================== [关键优化 1: 调整灵敏度参数] ==================
+        # 能量阈值：越低越灵敏，但噪音多。如果你环境安静，可以设为 300。
+        # 如果环境嘈杂，设为 400-1000。动态阈值开启后会自动调整。
         self.recognizer.energy_threshold = 400
-        # 如果环境嘈杂，设为 True 会自动调整，但在机器人身上可能导致误判，建议 False 或手动调
-        self.recognizer.dynamic_energy_threshold = False
+        self.recognizer.dynamic_energy_threshold = True  # 建议开启，适应环境变化
+
+        # 说话结束的判断时间：这是减少延迟的核心。
+        # 默认是 0.8s，改成 0.4s。意思是停顿 0.4s 就认为你说完了，立马开始识别。
+        self.recognizer.pause_threshold = 0.4
+
+        # 非说话状态的缓冲时间：保持短一点，减少处理开销
+        self.recognizer.non_speaking_duration = 0.3
+
+        # 录音时的短语限制，防止一直录个没完
+        self.recognizer.phrase_threshold = 0.3
+
+        # 预加载 Vosk 模型
+        self.vosk_model = None
+        if self.engine_type == 'vosk':
+            if not os.path.exists(VOSK_MODEL_PATH):
+                print(f"❌ Error: Vosk model not found at {VOSK_MODEL_PATH}")
+                sys.exit(1)
+            print(f"⏳ Loading Vosk model from {VOSK_MODEL_PATH}...")
+            # gpu_init=False 显式关闭 GPU 以防某些环境报错，通常 CPU 够快了
+            self.vosk_model = Model(VOSK_MODEL_PATH)
+            print("✅ Vosk model loaded.")
 
     def start(self):
         """启动后台监听线程"""
-        print("👂 Initializing Microphone for Google Speech...")
+        print(f"👂 Initializing Microphone for [{self.engine_type.upper()}] Speech...")
 
         try:
             # 初始化麦克风
-            # 注意：PyAudio 的设备索引可能与 sounddevice 不同，如果报错请尝试不传 device_index
-            self.mic = sr.Microphone(device_index=MIC_DEVICE_INDEX)
+            # sample_rate=16000 是 Vosk 模型的标准采样率，直接硬件匹配可以省去重采样时间
+            self.mic = sr.Microphone(device_index=MIC_DEVICE_INDEX, sample_rate=16000)
 
             with self.mic as source:
-                print(">>> Adjusting for ambient noise... (Please stay quiet for 1s)")
-                self.recognizer.adjust_for_ambient_noise(source, duration=1)
-                print(">>> Listening...")
+                print(">>> Adjusting for ambient noise... (0.5s)")
+                # 减少校准时间到 0.5s
+                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                print(f">>> Listening... (Threshold: {self.recognizer.energy_threshold})")
 
             # 启动后台监听
-            # listen_in_background 会自动创建一个线程去录音
-            # 当检测到一句完整的语音后，会自动调用 self._callback
-            self.stop_listening_func = self.recognizer.listen_in_background(self.mic, self._callback)
-            print("👂 Background Ears Started (Google Engine)...")
+            # phrase_time_limit=10: 限制单句最长 10 秒，防止噪音导致一直不切断录音
+            self.stop_listening_func = self.recognizer.listen_in_background(
+                self.mic,
+                self._callback,
+                phrase_time_limit=10
+            )
+            print(f"👂 Background Ears Started ({self.engine_type} Engine)...")
 
         except Exception as e:
             print(f"❌ Error starting microphone: {e}")
@@ -50,55 +85,74 @@ class BackgroundEars:
         print("👂 Ears Stopped.")
 
     def get_latest_text(self):
-        """非阻塞获取当前的一条语音文本"""
         try:
             return self.msg_queue.get_nowait()
         except queue.Empty:
             return None
 
-    def clear_queue(self):
-        """清空缓存"""
-        with self.msg_queue.mutex:
-            self.msg_queue.queue.clear()
-
     def _callback(self, recognizer, audio):
         """
-        这是回调函数，当后台线程录完一句话后会自动调用这里。
-        在这里我们将音频发送给 Google 进行识别。
+        回调函数：当检测到一段语音结束时触发
         """
+        start_time = time.time()  # 记录处理开始时间，用于调试延迟
         try:
-            # 使用 Google 语音识别 (需要联网)
-            # language='zh-CN' 指定中文
-            text = recognizer.recognize_google(audio, language='zh-CN')
+            text = ""
 
-            # 简单的文本清理
+            if self.engine_type == 'google':
+                try:
+                    text = recognizer.recognize_google(audio, language='zh-CN')
+                except sr.UnknownValueError:
+                    pass
+                except sr.RequestError as e:
+                    print(f"❌ Google API Error: {e}")
+
+            elif self.engine_type == 'vosk':
+                try:
+                    # ================== [关键优化 2: 直接处理 Raw Data] ==================
+                    # 获取原始数据，这里不需要 convert_rate 因为我们麦克风初始化就是 16000
+                    audio_data = audio.get_raw_data(convert_rate=16000, convert_width=2)
+
+                    if len(audio_data) == 0:
+                        return
+
+                    # 创建识别器 (每次 callback 创建一个新的识别器实例是安全的，也可以尝试复用但需要 Reset)
+                    rec = KaldiRecognizer(self.vosk_model, 16000)
+                    rec.AcceptWaveform(audio_data)
+
+                    # 使用 FinalResult 获取最终结果
+                    result_json = rec.FinalResult()
+                    res = json.loads(result_json)
+                    text = res.get('text', '')
+
+                except Exception as e:
+                    print(f"❌ Vosk Processing Error: {e}")
+
+            # 结果清理
             text = text.strip().replace(" ", "")
 
             if text:
-                print(f"🎤 [Google] Captured: {text}")
+                process_time = (time.time() - start_time) * 1000
+                print(f"🎤 [{self.engine_type.upper()}] Captured: {text} (Lat: {process_time:.0f}ms)")
                 self.msg_queue.put(text)
 
-        except sr.UnknownValueError:
-            # 听不到或听不清时会抛出此异常，直接忽略即可
-            pass
-        except sr.RequestError as e:
-            # 网络问题或 API 限制
-            print(f"❌ Google Speech API Error: {e}")
         except Exception as e:
-            print(f"❌ Unexpected Error in recognition: {e}")
+            print(f"❌ Unexpected Error in recognition callback: {e}")
 
 
 # 测试代码
 if __name__ == "__main__":
-    import time
+    # 修改这里来切换引擎： 'google' 或 'vosk'
+    CURRENT_ENGINE = 'vosk'
 
-    ears = BackgroundEars()
+    ears = BackgroundEars(engine_type=CURRENT_ENGINE)
     ears.start()
+
     try:
         while True:
             text = ears.get_latest_text()
             if text:
                 print(f"Main Thread Got: {text}")
-            time.sleep(0.1)
+                # 这里可以添加逻辑：比如听到“退出”就 break
+            time.sleep(0.05)  # 稍微减少主循环的 sleep 时间，提高响应检查频率
     except KeyboardInterrupt:
         ears.stop()

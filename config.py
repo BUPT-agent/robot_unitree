@@ -28,10 +28,10 @@ ACTION_MAP = {
     8:  {"group": "arm", "name": "release arm",   "desc": "放下手/松手/放松手臂"},
 
     # --- Locomotion Actions (运动/姿态) ---
-    9:  {"group": "loco", "name": "Squat2StandUp", "desc": "站起来/起立"},
-    10: {"group": "loco", "name": "StandUp2Squat", "desc": "蹲下/下蹲"},
-    11: {"group": "loco", "name": "low stand",     "desc": "低站姿/低姿态"},
-    12: {"group": "loco", "name": "high stand",    "desc": "高站姿/高姿态"},
+    # 9:  {"group": "loco", "name": "Squat2StandUp", "desc": "站起来/起立"},
+    # 10: {"group": "loco", "name": "StandUp2Squat", "desc": "蹲下/下蹲"},
+    # 11: {"group": "loco", "name": "low stand",     "desc": "低站姿/低姿态"},
+    # 12: {"group": "loco", "name": "high stand",    "desc": "高站姿/高姿态"},
     13: {"group": "loco", "name": "move forward",  "desc": "前进/往前走/向前"},
     14: {"group": "loco", "name": "move lateral",  "desc": "横移/左移/右移/侧移"},
     15: {"group": "loco", "name": "move rotate",   "desc": "转圈/旋转/原地转"},
@@ -41,6 +41,12 @@ ACTION_MAP = {
     19: {"group": "loco", "name": "wave hand2",    "desc": "摆手二/动作二"},
     # 20: {"group": "loco", "name": "Lie2StandUp",   "desc": "躺倒起立/起身/鲤鱼打挺"},
 }
+
+# === 定义填空词列表 (放在 main_loop 外面或 config 里均可) ===
+# 这些词简短且自然，用于填补 LLM 思考的 1-3 秒空白
+FILLER_PHRASES = [
+    "收到指令",
+]
 
 def get_action_prompt_text():
     """生成给大模型的提示词文本"""
