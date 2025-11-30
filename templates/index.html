@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G1 机器人指挥中心 (Hybrid)</title>
+    <style>
+        :root {
+            --bg-color: #0a0b10;
+            --panel-bg: rgba(20, 25, 35, 0.95);
+            --border-color: #333;
+            --accent-cyan: #00f3ff;
+            --accent-green: #0aff00;
+            --accent-red: #ff003c;
+            --accent-yellow: #ffcc00;
+            --text-main: #e0e0e0;
+            --text-dim: #888;
+            --font-tech: 'Segoe UI', 'Microsoft YaHei', 'Roboto Mono', monospace;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-color);
+            background-image:
+                linear-gradient(rgba(0, 243, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 243, 255, 0.03) 1px, transparent 1px);
+            background-size: 30px 30px;
+            color: var(--text-main);
+            font-family: var(--font-tech);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- 顶部导航栏 --- */
+        header {
+            height: 60px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 2rem;
+            background: rgba(0,0,0,0.95);
+            z-index: 100;
+        }
+
+        .brand {
+            font-size: 1.4rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+            color: var(--accent-cyan);
+            text-transform: uppercase;
+            text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .status-pill {
+            display: flex;
+            align-items: center;
+            font-size: 0.85rem;
+            background: #111;
+            padding: 6px 16px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            min-width: 140px;
+            justify-content: center;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #444;
+            border-radius: 50%;
+            margin-right: 10px;
+            box-shadow: 0 0 5px #444;
+            transition: all 0.3s;
+        }
+        .status-dot.active { background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
+        .status-dot.busy { background: var(--accent-yellow); box-shadow: 0 0 8px var(--accent-yellow); }
+        .status-dot.offline { background: var(--accent-red); box-shadow: 0 0 8px var(--accent-red); }
+
+        .settings-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-dim);
+            padding: 5px 10px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 1.2rem;
+        }
+        .settings-btn:hover { color: #fff; border-color: #fff; }
+
+        /* --- 主布局 --- */
+        .main-container {
+            display: flex;
+            flex: 1;
+            padding: 20px;
+            gap: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .side-panel { width: 300px; display: flex; flex-direction: column; gap: 20px; }
+        .center-panel { flex: 1; display: flex; flex-direction: column; gap: 20px; min-width: 400px; }
+
+        /* --- 卡片通用 --- */
+        .card {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            position: relative;
+        }
+        .card-full { flex: 1; }
+
+        .card-header {
+            padding: 12px 15px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--border-color);
+            background: rgba(0,0,0,0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* --- 模式切换 --- */
+        .mode-group {
+            display: flex;
+            background: #000;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+        .mode-btn {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.3s;
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: var(--text-dim);
+            border-bottom: 2px solid transparent;
+        }
+        .mode-btn:hover { background: #1a1a1a; color: #fff; }
+        .mode-btn.active {
+            background: rgba(0, 243, 255, 0.15);
+            color: var(--accent-cyan);
+            border-bottom: 2px solid var(--accent-cyan);
+        }
+
+        /* 模式指示器 */
+        .mode-indicator {
+            padding: 10px;
+            font-size: 0.8rem;
+            text-align: center;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid var(--border-color);
+            color: #888;
+        }
+        .mode-indicator.active-auto { color: var(--accent-green); }
+        .mode-indicator.active-director { color: var(--accent-cyan); }
+
+        /* --- 内容区域 --- */
+        .tabs { display: flex; border-bottom: 1px solid var(--border-color); }
+        .tab {
+            padding: 15px 25px;
+            cursor: pointer;
+            color: var(--text-dim);
+            font-weight: bold;
+            font-size: 0.9rem;
+            transition: 0.2s;
+            border-right: 1px solid var(--border-color);
+        }
+        .tab:hover { color: #fff; background: rgba(255,255,255,0.05); }
+        .tab.active {
+            color: var(--accent-cyan);
+            background: rgba(0, 243, 255, 0.05);
+            border-bottom: 2px solid var(--accent-cyan);
+        }
+
+        .tab-content { padding: 20px; display: none; flex: 1; overflow-y: auto; flex-direction: column; }
+        .tab-content.show { display: flex; }
+
+        /* --- 控件 --- */
+        textarea {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 15px;
+            border-radius: 4px;
+            height: 120px;
+            font-family: var(--font-tech);
+            font-size: 1rem;
+            resize: none;
+            width: 100%;
+            margin-bottom: 15px;
+        }
+        textarea:focus { outline: 1px solid var(--accent-cyan); border-color: var(--accent-cyan); }
+
+        .btn {
+            border: none;
+            padding: 12px 24px;
+            cursor: pointer;
+            font-weight: bold;
+            font-family: var(--font-tech);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 2px;
+            transition: 0.2s;
+            font-size: 0.9rem;
+        }
+        .btn-cyan { background: var(--accent-cyan); color: #000; }
+        .btn-cyan:hover { background: #fff; box-shadow: 0 0 15px rgba(0, 243, 255, 0.5); }
+
+        .btn-stop {
+            background: rgba(255, 0, 60, 0.1);
+            color: var(--accent-red);
+            border: 1px solid var(--accent-red);
+            width: 100%;
+            margin-top: 10px;
+            padding: 15px;
+            font-size: 1rem;
+        }
+        .btn-stop:hover { background: var(--accent-red); color: #fff; box-shadow: 0 0 20px rgba(255, 0, 60, 0.4); }
+
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 15px;
+        }
+        .action-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 15px 10px;
+            cursor: pointer;
+            text-align: center;
+            border-radius: 4px;
+            transition: 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+        .action-btn:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            background: rgba(0, 243, 255, 0.05);
+        }
+        .action-icon { font-size: 1.5rem; margin-bottom: 5px; }
+
+        .section-label {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin: 15px 0 10px 0;
+            border-left: 2px solid var(--accent-cyan);
+            padding-left: 10px;
+            text-transform: uppercase;
+        }
+
+        /* --- 日志 --- */
+        .history-list { overflow-y: auto; flex: 1; padding: 10px; }
+        .log-item {
+            padding: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.9rem;
+            display: flex;
+            gap: 10px;
+        }
+        .log-time { color: var(--text-dim); font-size: 0.75rem; white-space: nowrap; }
+        .log-content { color: #fff; line-height: 1.4; word-break: break-all; }
+        .log-tag {
+            font-size: 0.7rem; padding: 2px 6px; border-radius: 3px;
+            background: #333; height: fit-content; white-space: nowrap;
+        }
+        .log-tag.ai { background: #2a2; color: #fff; }
+        .log-tag.user { background: #0aa; color: #000; }
+
+        /* --- 文件上传 --- */
+        .upload-box {
+            border: 2px dashed var(--border-color);
+            border-radius: 6px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-bottom: 15px;
+        }
+        .upload-box:hover { border-color: var(--accent-green); color: var(--accent-green); }
+        .file-input { display: none; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #000; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+        /* --- 设置弹窗 --- */
+        .settings-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 999;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+        .settings-box {
+            background: #151515;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            width: 400px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+        .settings-input {
+            width: 100%;
+            padding: 10px;
+            background: #000;
+            border: 1px solid #333;
+            color: #fff;
+            margin: 10px 0 20px 0;
+            font-family: monospace;
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="settings-modal" class="settings-modal">
+    <div class="settings-box">
+        <h3 style="margin-top:0; color:var(--accent-cyan);">API 连接设置</h3>
+        <p style="font-size:0.8rem; color:#888;">CORS 跨域警告：请确保后端已启用 flask-cors</p>
+        <label style="font-size:0.9rem;">后端地址 (例如 http://127.0.0.1:5000)</label>
+        <input type="text" id="api-url-input" class="settings-input" value="http://127.0.0.1:5000">
+        <div style="display:flex; justify-content:flex-end; gap:10px;">
+            <button class="btn" style="background:#333;" onclick="closeSettings()">取消</button>
+            <button class="btn btn-cyan" onclick="saveSettings()">保存并重连</button>
+        </div>
+    </div>
+</div>
+
+<header>
+    <div class="brand">Unitree G1 <span style="font-size:0.5em; opacity:0.6; vertical-align: middle;">// COMMAND SYSTEM</span></div>
+
+    <div class="header-controls">
+        <div class="status-pill">
+            <div id="status-dot" class="status-dot"></div>
+            <span id="status-text">初始化...</span>
+        </div>
+        <button class="settings-btn" onclick="openSettings()" title="设置 API 地址">⚙</button>
+    </div>
+</header>
+
+<div class="main-container">
+
+    <div class="side-panel">
+        <div class="card">
+            <div class="card-header">Control Mode</div>
+            <div class="mode-group">
+                <div id="btn-auto" class="mode-btn active" onclick="requestModeChange('auto')">
+                    <div>AUTO</div>
+                    <div style="font-size:0.7em; opacity:0.6;">AI 托管 + 麦克风</div>
+                </div>
+                <div id="btn-director" class="mode-btn" onclick="requestModeChange('director')">
+                    <div>DIRECTOR</div>
+                    <div style="font-size:0.7em; opacity:0.6;">仅人工指令</div>
+                </div>
+            </div>
+            <div id="mode-desc" class="mode-indicator active-auto">
+                <span id="mode-icon">🎤</span>
+                <span id="mode-text">机器人正在监听环境声音...</span>
+            </div>
+
+            <div style="padding: 15px;">
+                <button class="btn btn-stop" onclick="sendStop()">
+                    ⚠ 强制打断 / 停止 (STOP)
+                </button>
+            </div>
+        </div>
+
+        <div class="card card-full">
+            <div class="card-header">
+                Interactive Logs
+                <span style="cursor:pointer; font-size:1.2em;" onclick="loadHistory()">⟳</span>
+            </div>
+            <div id="log-container" class="history-list">
+                </div>
+        </div>
+    </div>
+
+    <div class="center-panel">
+        <div class="card card-full" style="position: relative;">
+
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('tab-tts')">语音广播 (TTS)</div>
+                <div class="tab" onclick="switchTab('tab-action')">动作干预 (Action)</div>
+                <div class="tab" onclick="switchTab('tab-audio')">音频文件 (WAV)</div>
+            </div>
+
+            <div id="tab-tts" class="tab-content show">
+                <div class="section-label">发送指定语音 (最高优先级)</div>
+                <div style="font-size: 0.8rem; color: #888; margin-bottom: 10px;">
+                    即使在 Auto 模式下，此处发送的文字也会强制机器人立即播报。
+                </div>
+                <textarea id="tts-input" placeholder="输入你想让机器人说的话... (例如: 欢迎各位领导莅临参观)"></textarea>
+                <div style="display: flex; justify-content: flex-end;">
+                    <button class="btn btn-cyan" onclick="sendSpeak()">⚡ 立即发送 (SPEAK)</button>
+                </div>
+
+                <div class="section-label">常用短语</div>
+                <div class="action-grid">
+                    <div class="action-btn" onclick="fillAndSend('大家好，我是Unitree G1机器人。')">自我介绍</div>
+                    <div class="action-btn" onclick="fillAndSend('我正在思考中，请稍等。')">思考中</div>
+                    <div class="action-btn" onclick="fillAndSend('好的，动作已执行完毕。')">动作完成</div>
+                    <div class="action-btn" onclick="fillAndSend('请问需要我展示什么才艺？')">引导互动</div>
+                </div>
+            </div>
+
+            <div id="tab-action" class="tab-content">
+                <div class="section-label">手动触发动作 (辅助 AI)</div>
+                <div style="font-size: 0.8rem; color: #888; margin-bottom: 10px;">
+                    AI 会自动判断动作，但你也可以在此手动触发。
+                </div>
+                <div class="action-grid">
+                    <div class="action-btn" onclick="sendAction('loco', 'StandUp2Squat')">
+                        <div class="action-icon">⬇</div>蹲下
+                    </div>
+                    <div class="action-btn" onclick="sendAction('loco', 'Squat2StandUp')">
+                        <div class="action-icon">⬆</div>站起
+                    </div>
+                    <div class="action-btn" onclick="sendAction('loco', 'damp')">
+                        <div class="action-icon">⛔</div>阻尼/放松
+                    </div>
+                    <div class="action-btn" onclick="sendAction('arm', 'shake hand')">
+                        <div class="action-icon">🤝</div>握手
+                    </div>
+                    <div class="action-btn" onclick="sendAction('arm', 'high wave')">
+                        <div class="action-icon">👋</div>挥手
+                    </div>
+                    <div class="action-btn" onclick="sendAction('arm', 'heart')">
+                        <div class="action-icon">❤️</div>比心
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-audio" class="tab-content">
+                <div class="section-label">上传并播放 WAV 文件</div>
+                <label class="upload-box">
+                    <div id="file-label" style="font-size: 1.2rem; font-weight: bold;">点击选择文件 (.wav)</div>
+                    <div style="font-size: 0.8rem; margin-top: 10px; color: #666;">支持格式: PCM WAV, 16k/44.1k</div>
+                    <input type="file" id="wav-file" class="file-input" accept=".wav" onchange="handleFileSelect()">
+                </label>
+                <div style="display: flex; justify-content: flex-end;">
+                    <button class="btn btn-cyan" style="background: var(--accent-green);" onclick="uploadAndPlay()">上传并播放</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 核心配置 ---
+    let API_BASE = localStorage.getItem('G1_API_URL') || 'http://127.0.0.1:5000';
+    let currentMode = 'auto'; // 默认为 auto
+    let isOffline = true;
+
+    // --- 设置逻辑 ---
+    function openSettings() {
+        document.getElementById('api-url-input').value = API_BASE;
+        document.getElementById('settings-modal').style.display = 'flex';
+    }
+    function closeSettings() {
+        document.getElementById('settings-modal').style.display = 'none';
+    }
+    function saveSettings() {
+        const newUrl = document.getElementById('api-url-input').value.replace(/\/$/, "");
+        API_BASE = newUrl;
+        localStorage.setItem('G1_API_URL', newUrl);
+        closeSettings();
+        alert("地址已更新，正在重连...");
+        pingStatus();
+    }
+
+    async function safeFetch(endpoint, options = {}) {
+        const url = `${API_BASE}${endpoint}`;
+        // 预览环境拦截
+        if (window.location.protocol === 'blob:' || window.location.host.includes('content')) {
+            console.warn("Detected preview environment, blocking local request.");
+            return { ok: false, status: 0, isPreview: true };
+        }
+        try {
+            return await fetch(url, options);
+        } catch (error) {
+            console.error(`Fetch Error:`, error);
+            return { ok: false, status: 0, error: error };
+        }
+    }
+
+    // --- 初始化 ---
+    window.onload = function() {
+        updateUIState('auto'); // 默认显示为 Auto
+        loadHistory();
+        pingStatus();
+        setInterval(pingStatus, 2000);
+    };
+
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('show'));
+        document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('show');
+
+        // 简单映射激活状态
+        const tabs = document.querySelectorAll('.tab');
+        if(tabId === 'tab-tts') tabs[0].classList.add('active');
+        if(tabId === 'tab-action') tabs[1].classList.add('active');
+        if(tabId === 'tab-audio') tabs[2].classList.add('active');
+    }
+
+    // --- 模式切换 ---
+    async function requestModeChange(newMode) {
+        if (newMode === currentMode && !isOffline) return;
+
+        const btn = document.getElementById(newMode === 'auto' ? 'btn-auto' : 'btn-director');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = `<div>切换中...</div>`;
+
+        const res = await safeFetch('/api/set_mode', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mode: newMode})
+        });
+
+        btn.innerHTML = originalText;
+
+        if (res.ok) {
+            updateUIState(newMode);
+        } else {
+            handleError(res, "切换模式失败");
+        }
+    }
+
+    // 更新 UI 状态：现在 Auto 模式不再锁定界面
+    function updateUIState(mode) {
+        currentMode = mode;
+
+        // 1. 按钮高亮
+        document.getElementById('btn-auto').className = `mode-btn ${mode === 'auto' ? 'active' : ''}`;
+        document.getElementById('btn-director').className = `mode-btn ${mode === 'director' ? 'active' : ''}`;
+
+        // 2. 更新下方状态文字
+        const descDiv = document.getElementById('mode-desc');
+        const iconSpan = document.getElementById('mode-icon');
+        const textSpan = document.getElementById('mode-text');
+
+        if (mode === 'auto') {
+            descDiv.className = "mode-indicator active-auto";
+            iconSpan.innerText = "🎤";
+            textSpan.innerText = "麦克风已开启 | 允许手动插播指令";
+        } else {
+            descDiv.className = "mode-indicator active-director";
+            iconSpan.innerText = "🔇";
+            textSpan.innerText = "麦克风已关闭 | 仅响应手动指令";
+        }
+
+        // 注意：这里删除了遮罩层的显示逻辑，实现了“手动指令在自动模式下可用”
+    }
+
+    // --- 状态轮询 ---
+    async function pingStatus() {
+        const res = await safeFetch('/api/status');
+        const dot = document.getElementById('status-dot');
+        const text = document.getElementById('status-text');
+
+        if (res.ok) {
+            isOffline = false;
+            const data = await res.json();
+
+            if (data.is_replying) {
+                dot.className = 'status-dot busy';
+                text.innerText = "AI 思考/回复中...";
+                text.style.color = "var(--accent-yellow)";
+            } else {
+                dot.className = 'status-dot active';
+                text.innerText = "系统在线";
+                text.style.color = "var(--accent-green)";
+            }
+
+            if (data.mode && data.mode !== currentMode) {
+                updateUIState(data.mode);
+            }
+        } else {
+            isOffline = true;
+            dot.className = 'status-dot offline';
+            text.innerText = "离线";
+            text.style.color = "var(--accent-red)";
+        }
+    }
+
+    function handleError(res, context) {
+        if(!isOffline) {
+            console.warn(context, res);
+            alert(`${context}: 连接失败或被拒绝`);
+        }
+    }
+
+    // --- 核心功能：发送指令 ---
+    // 这个函数会调用后端的 /api/director/speak
+    // 即使在 auto 模式下，只要后端的 main_loop 先检查 director_queue，这个指令就会被优先执行
+    async function sendSpeak() {
+        const input = document.getElementById('tts-input');
+        const text = input.value.trim();
+        if (!text) return;
+
+        const res = await safeFetch('/api/director/speak', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text})
+        });
+
+        if(res.ok) {
+            input.value = '';
+            // 稍后刷新日志
+            setTimeout(loadHistory, 500);
+        } else {
+            handleError(res, "发送 TTS 失败");
+        }
+    }
+
+    function fillAndSend(text) {
+        document.getElementById('tts-input').value = text;
+        sendSpeak();
+    }
+
+    async function sendAction(group, name) {
+        const res = await safeFetch('/api/director/action', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ group: group, name: name })
+        });
+        if (!res.ok) handleError(res, "发送动作失败");
+    }
+
+    // --- 文件处理 ---
+    function handleFileSelect() {
+        const input = document.getElementById('wav-file');
+        if(input.files[0]) {
+            document.getElementById('file-label').innerText = input.files[0].name;
+            document.getElementById('file-label').style.color = 'var(--accent-green)';
+        }
+    }
+
+    async function uploadAndPlay() {
+        const input = document.getElementById('wav-file');
+        if (!input.files[0]) return alert("请先选择一个 WAV 文件");
+        const formData = new FormData();
+        formData.append('file', input.files[0]);
+        const res = await safeFetch('/api/director/upload_play', { method: 'POST', body: formData });
+        if (res.ok) {
+            alert("播放请求已发送");
+            input.value = '';
+            document.getElementById('file-label').innerText = "点击选择文件 (.wav)";
+            document.getElementById('file-label').style.color = 'inherit';
+        } else {
+            handleError(res, "上传失败");
+        }
+    }
+
+    async function sendStop() {
+        await safeFetch('/api/interrupt', {method: 'POST'});
+        document.body.style.transform = "translateX(5px)";
+        setTimeout(() => document.body.style.transform = "none", 50);
+    }
+
+    async function loadHistory() {
+        const res = await safeFetch('/api/history');
+        if (res.ok) {
+            const data = await res.json();
+            const container = document.getElementById('log-container');
+            container.innerHTML = '';
+
+            if (data.texts && data.texts.length > 0) {
+                [...data.texts].reverse().forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'log-item';
+
+                    // 简单的判断：如果是用户手动发的指令，可以标不同颜色（这里暂时统一样式）
+                    // 实际项目中可以根据 item 里的 source 字段区分 AI 还是 User
+                    div.innerHTML = `
+                        <div class="log-time">${item.time}</div>
+                        <div class="log-content">${item.content}</div>
+                    `;
+                    container.appendChild(div);
+                });
+            } else {
+                container.innerHTML = '<div style="padding:20px; color:#555; text-align:center;">暂无记录</div>';
+            }
+        }
+    }
+</script>
+</body>
+</html>
