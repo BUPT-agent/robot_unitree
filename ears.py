@@ -20,7 +20,7 @@ class RobotEars:
     def _callback(self, indata, frames, time, status):
         self.q.put(bytes(indata))
 
-    def listen_once(self, timeout=100, check_wake_word=False):
+    def listen_once(self, timeout=10, check_wake_word=False):
         """
         监听一次语音输入。
         check_wake_word: 如果为True，只返回包含唤醒词的结果。

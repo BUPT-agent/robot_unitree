@@ -1,6 +1,7 @@
 import threading
 import time
 import queue
+import random
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 
@@ -69,73 +70,134 @@ def run_flask():
 
 # === 主控制循环 ===
 def main_loop():
-    print(">>> System Ready. Waiting for wake word...")
+    print(">>> System Ready. Continuous Listening Mode...")
+
+    # --- 空闲行为计时初始化 ---
+    last_interaction_time = time.time()
+    # 初始随机阈值：15~30秒内没人说话，机器人就会触发闲时行为
+    idle_threshold = random.randint(15, 30)
 
     while True:
-        # 1. 优先处理 Web 端指令 (Director Mode)
+        # =================================================
+        # 1. 优先处理 Web 端指令 (Director Mode & Auto Mode)
+        # =================================================
         try:
+            # get_nowait() 是非阻塞的，如果没有指令会立即抛出 Empty 异常
             task = director_queue.get_nowait()
+
+            # 只要有网页操作，就视为产生了互动，重置空闲计时
+            last_interaction_time = time.time()
+
             if task[0] == 'speak':
-                robot.speak(task[1])
+                text_content = task[1]
+                print(f"📡 Web Command Speak: {text_content}")
+
+                # 手动更新大脑记忆，确保机器人知道自己刚才被强制说了什么
+                brain.update_history("assistant", text_content)
+                robot.speak(text_content)
+
             elif task[0] == 'action':
-                robot.perform_action(task[1])
+                action_data = task[1]
+                print(f"📡 Web Command Action: {action_data}")
+                robot.perform_action(action_data)
+
+            # 处理完网页指令后，立即跳过本次循环的剩余部分，
+            # 快速回到开头检查是否还有下一条网页指令（保证连点不卡顿）
             continue
+
         except queue.Empty:
             pass
 
-        # 2. 自动模式逻辑
+        # =================================================
+        # 2. 自动模式逻辑 (Auto Mode)
+        # =================================================
         if current_mode == "auto":
-            # A. 监听唤醒词
-            # 注意：timeout 设置太大可能会导致网页端指令响应变慢，建议设置短一点循环检查
-            wake_text = ears.listen_once(timeout=10, check_wake_word=True)
+            # 监听环境音
+            # timeout=2 表示监听2秒。如果2秒内没说话，函数返回 None，
+            # 程序会继续向下运行去检查空闲计时器或重新检查网页指令。
+            user_text = ears.listen_once(timeout=5, check_wake_word=False)
 
-            if wake_text:
-                print(f"⚡️ Wake Word Detected: {wake_text}")
-                robot.speak("我在")
+            if user_text:
+                # ---------------------------------
+                # 情况 A: 用户说话了 (User Spoke)
+                # ---------------------------------
+                print(f"👂 User said: {user_text}")
 
-                # B. 监听具体指令 (唤醒后给更多时间说话)
-                cmd_text = ears.listen_once(timeout=10, check_wake_word=False)
+                # 重置空闲计时
+                last_interaction_time = time.time()
+                # 重置下一次触发闲时行为的阈值 (15-30秒)
+                idle_threshold = random.randint(15, 30)
 
-                if cmd_text:
-                    print(f"User said: {cmd_text}")
+                # A.1 打断检测 (最高优先级)
+                if any(k in user_text for k in INTERRUPT_KEYWORDS):
+                    print("🛑 Interrupt detected!")
+                    robot.stop_all()
+                    continue
 
-                    # 检查是否是打断指令
-                    if any(k in cmd_text for k in INTERRUPT_KEYWORDS):
-                        robot.stop_all()
-                        continue
+                # A.2 核心交互流程
+                # 1. 判断动作
+                print("Analyzing action...")
+                action_data = brain.analyze_action(user_text)
 
-                    # --- 核心 AI 流程 (修改后) ---
+                # 2. 生成回复 (带动作上下文)
+                print("Generating reply...")
+                # 注意：get_chat_reply 内部会自动更新 brain.history
+                reply = brain.get_chat_reply(user_text, action_data=action_data)
 
-                    # 步骤 1: 先判断动作 (Action Analysis)
-                    print("Analyzing action...")
-                    action_data = brain.analyze_action(cmd_text)
+                # 3. 并发执行 (一边说一边做)
+                t_speak = None
+                if reply:
+                    print(f"🗣️ Robot says: {reply}")
+                    # 启动独立线程说话，防止阻塞动作执行
+                    t_speak = threading.Thread(target=robot.speak, args=(reply,))
+                    t_speak.start()
 
-                    # 步骤 2: 将动作信息作为上下文，生成回复 (Chat Generation)
-                    # 此时 prompt 会变成："你即将执行[握手]，请结合该动作回复用户"
-                    print("Generating reply with action context...")
-                    reply = brain.get_chat_reply(cmd_text, action_data=action_data)
+                if action_data:
+                    print(f"🦾 Robot acts: {action_data['desc']}")
+                    robot.perform_action(action_data)
 
-                    # 步骤 3: 执行 (Execution)
-                    # 策略：先触发说话，紧接着触发动作，让它们尽可能并发
-                    if reply:
-                        print(f"🗣️ Robot says: {reply}")
-                        # 使用线程或者非阻塞方式说话，这里取决于 robot.speak 实现
-                        # 如果 robot.speak 是阻塞的，动作会在说完后执行
-                        # 如果想要一边说一边做，可以把 speak 放到线程里
-                        t_speak = threading.Thread(target=robot.speak, args=(reply,))
-                        t_speak.start()
+                # 等待说话线程结束
+                # 这一步很重要，防止机器人说话时被自己的麦克风录进去导致死循环
+                if t_speak:
+                    t_speak.join()
 
-                    if action_data:
-                        print(f"🦾 Robot acts: {action_data['desc']}")
-                        robot.perform_action(action_data)
+            else:
+                # ---------------------------------
+                # 情况 B: 没人说话 (Silence / Idle)
+                # ---------------------------------
+                current_time = time.time()
+                time_diff = current_time - last_interaction_time
 
-                    # 确保说话线程结束 (可选)
-                    if reply:
-                        t_speak.join(timeout=10)
+                # 检查沉默时间是否超过了随机阈值
+                if time_diff > idle_threshold:
+                    print(f"💤 Idle triggered (Silence for {int(time_diff)}s)...")
 
-                else:
-                    print("No command detected (timeout).")
+                    # 触发大脑的闲时行为逻辑
+                    idle_text, idle_action = brain.trigger_idle_behavior()
+                    print(idle_text)
+                    print(idle_action)
 
+                    if idle_text:
+                        print(f"🤖 Auto-Idle-Reply: {idle_text}")
+
+                        # 同样采用线程说话，配合可能的动作
+                        t_idle = threading.Thread(target=robot.speak, args=(idle_text,))
+                        t_idle.start()
+
+                        if idle_action:
+                            print(f"🦾 Auto-Idle-Action: {idle_action['desc']}")
+                            robot.perform_action(idle_action)
+
+                        if t_idle: t_idle.join()
+
+                    # 触发过一次后，重置计时器
+                    last_interaction_time = time.time()
+
+                    # 将下一次的触发间隔调长 (例如 20-60秒)，防止它过于唠叨
+                    idle_threshold = random.randint(20, 30)
+                    print(f"💤 Next idle check in {idle_threshold}s")
+
+        # 避免 CPU 100% 占用
         time.sleep(0.05)
 
 
