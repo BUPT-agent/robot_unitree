@@ -35,11 +35,11 @@ ACTION_MAP = {
     13: {"group": "loco", "name": "move forward",  "desc": "前进/往前走/向前"},
     14: {"group": "loco", "name": "move lateral",  "desc": "横移/左移/右移/侧移"},
     15: {"group": "loco", "name": "move rotate",   "desc": "转圈/旋转/原地转"},
-    16: {"group": "loco", "name": "damp",          "desc": "阻尼状态/放松/变软"},
-    17: {"group": "loco", "name": "zero torque",   "desc": "零力矩模式"},
+    # 16: {"group": "loco", "name": "damp",          "desc": "阻尼状态/放松/变软"},
+    # 17: {"group": "loco", "name": "zero torque",   "desc": "零力矩模式"},
     18: {"group": "loco", "name": "wave hand1",    "desc": "摆手一/动作一"},
     19: {"group": "loco", "name": "wave hand2",    "desc": "摆手二/动作二"},
-    20: {"group": "loco", "name": "Lie2StandUp",   "desc": "躺倒起立/起身/鲤鱼打挺"},
+    # 20: {"group": "loco", "name": "Lie2StandUp",   "desc": "躺倒起立/起身/鲤鱼打挺"},
 }
 
 def get_action_prompt_text():
