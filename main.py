@@ -1,23 +1,23 @@
 import threading
 import time
 import queue
-import random
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-
-from config import INTERRUPT_KEYWORDS, FILLER_PHRASES
+from openai import OpenAI
+from config import LLM_API_KEY, LLM_BASE_URL
+from pypinyin import lazy_pinyin
+# === 配置导入 ===
+from config import WAKE_WORDS,IS_LLM_CHECK
 from robot_client import RobotClient
 from brain import RobotBrain
-# 注意这里引入的是新的 BackgroundEars
 from ears import BackgroundEars
-from concurrent.futures import ThreadPoolExecutor
-
+import os
 # === 初始化核心模块 ===
 robot = RobotClient()
 brain = RobotBrain()
-ears = BackgroundEars()  # 实例化
+ears = BackgroundEars()
 
-# === Flask Web Server (保持不变) ===
+# === Flask Web Server ===
 app = Flask(__name__)
 CORS(app)
 director_queue = queue.Queue()
@@ -25,12 +25,12 @@ current_mode = "auto"
 
 
 @app.route('/')
-def index(): return render_template('index.html')
+def index():
+    return render_template('index.html')
 
 
 @app.route('/api/interrupt', methods=['POST'])
 def api_interrupt():
-    # 打断时，不仅要停机器人，还要清空积压的语音缓存
     ears.clear_queue()
     robot.stop_all()
     return jsonify({"status": "stopped"})
@@ -43,14 +43,14 @@ def set_mode():
     mode = data.get('mode')
     if mode in ['auto', 'director']:
         current_mode = mode
-        ears.clear_queue()  # 切换模式时清空缓存
+        ears.clear_queue()
         return jsonify({"status": "success", "mode": mode})
     return jsonify({"status": "error"}), 400
 
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
-    return jsonify({"mode": current_mode, "is_replying": False})
+    return jsonify({"mode": current_mode, "is_replying": robot.is_speaking()})
 
 
 @app.route('/api/director/speak', methods=['POST'])
@@ -70,128 +70,87 @@ def director_action():
 def run_flask():
     app.run(host='0.0.0.0', port=5000, use_reloader=False)
 
+
 # === 核心逻辑：主循环 ===
 def main_loop():
-    # 1. 启动耳朵线程
     ears.start()
-    print(">>> System Ready. High-Performance Event Loop Started.")
-
-    last_interaction_time = time.time()
-    idle_threshold = random.randint(15, 30)
-
     while True:
-        # ==========================================
-        # 1. 检查网页指令 (保持不变)
-        # ==========================================
+        # 1. 检查网页指令 (最高优先级)
         try:
             web_task = director_queue.get_nowait()
-            last_interaction_time = time.time()
             ears.clear_queue()
-
             if web_task[0] == 'speak':
-                print(f"📡 Web Speak: {web_task[1]}")
                 brain.update_history("assistant", web_task[1])
-                threading.Thread(target=robot.speak, args=(web_task[1],)).start()
+                robot.speak(web_task[1])
             elif web_task[0] == 'action':
-                print(f"📡 Web Action: {web_task[1]}")
                 threading.Thread(target=robot.perform_action, args=(web_task[1],)).start()
             continue
         except queue.Empty:
             pass
 
-        # ==========================================
-        # 2. 检查语音缓存 (Auto Mode) - 修改了这里
-        # ==========================================
+        # 2. 检查语音缓存 (Auto Mode)
         if current_mode == "auto":
+            if robot.is_speaking():
+                ears.clear_queue()
+                time.sleep(0.1)
+                continue
+
             user_text = ears.get_latest_text()
 
             if user_text:
-                t_received = time.time()
-                print(f"\n[TIMING] 📨 Received: '{user_text}'")
+                user_pinyin = "".join(lazy_pinyin(user_text))
 
-                # 重置空闲计时
-                last_interaction_time = time.time()
-                idle_threshold = random.randint(15, 30)
+                # 2. 遍历唤醒词，同样转为拼音进行匹配
+                is_woken_up = any("".join(lazy_pinyin(kw)) in user_pinyin for kw in WAKE_WORDS)
 
-                # A. 打断检测
-                if any(k in user_text for k in INTERRUPT_KEYWORDS):
-                    print("🛑 Interrupt detected!")
-                    robot.stop_all()
-                    ears.clear_queue()
-                    continue
+                if is_woken_up:
+                    try:
+                        if IS_LLM_CHECK == True:
+                            try:
+                                # 1. 构建符合 OpenAI 标准的消息格式
+                                # 建议将提示词放入 system 角色，用户语音放入 user 角色
+                                messages_payload = [
+                                    {"role": "system", "content": "请纠正下面用户问题的语言错误，把桂小志的同音词（例如“归小子”，“鬼小志”）换成桂小志，仅返回修复后的问题："},
+                                    {"role": "user", "content": user_text}
+                                ]
 
-                # ==========================================
-                # ⚡️ 极速响应逻辑 (Instant Feedback)
-                # ==========================================
+                                # 2. 调用 API
+                                response = _client.chat.completions.create(
+                                    model="gpt-4o",
+                                    messages=messages_payload,  # 这里传入列表，而不是字符串
+                                    temperature=0.7,
+                                )
 
-                # # 1. 【立即】播放“填空词” (Filler)
-                # # 这一步是毫秒级的，用户说完话立刻就能听到反馈
-                # filler = random.choice(FILLER_PHRASES)
-                # print(f"🗣️ [Fast Ack] Speaking filler: {filler}")
-                # # 注意：这里使用线程播放，确保不阻塞后面的大脑思考
-                # threading.Thread(target=robot.speak, args=(filler,)).start()
+                                # 3. 更新 user_text
+                                user_text = response.choices[0].message.content.strip()
+                                print("修正后的句子：", user_text)
 
-                # ==========================================
-                # 🧠 并行思考 (Parallel Thinking)
-                # ==========================================
-                # 在机器人念叨“嗯，让我想想...”的同时，大脑疯狂运转
-                print("⚡️ Processing LLM in background...")
+                            except Exception as e:
+                                print(f"❌ LLM API Error: {str(e)}")
+                                pass
 
-                action_data = None
-                reply = None
+                        reply_generator = brain.get_chat_reply(user_text)
 
-                # 使用线程池并行请求 Action 和 Reply
-                with ThreadPoolExecutor(max_workers=2) as executor:
-                    future_action = executor.submit(brain.analyze_action, user_text)
-                    future_reply = executor.submit(brain.get_chat_reply, user_text)
+                        for sentence in reply_generator:
+                            if not sentence: continue
 
-                    # 等待结果 (此时机器人可能正在播放 Filler，或者刚播完)
-                    action_data = future_action.result()
-                    reply = future_reply.result()
+                            if robot.interrupt_event.is_set():
+                                break
 
-                # 计算思考耗时
-                think_duration = time.time() - t_received
-                print(f"✅ Thinking done in {think_duration:.2f}s")
+                            robot.speak(sentence)
 
-                # ==========================================
-                # 🎬 最终执行 (Final Execution)
-                # ==========================================
-
-                # 1. 播放正式回复
-                # 语音合成通常有队列机制。如果 Filler 还没说完，这句话会自动排在后面。
-                if reply:
-                    print(f"🗣️ Robot Reply: {reply}")
-                    threading.Thread(target=robot.speak, args=(reply,)).start()
-
-                # 2. 执行动作
-                # 动作也应该并行触发，不要等话说完才动
-                if action_data:
-                    print(f"🦾 Robot Act: {action_data.get('desc', 'Unknown')}")
-                    threading.Thread(target=robot.perform_action, args=(action_data,)).start()
-
-            else:
-                # ==========================================
-                # 3. 空闲检测 (保持不变)
-                # ==========================================
-                if time.time() - last_interaction_time > idle_threshold:
-                    print(f"💤 Idle triggered...")
-                    idle_text, idle_action = brain.trigger_idle_behavior()
-                    if idle_text:
-                        threading.Thread(target=robot.speak, args=(idle_text,)).start()
-                        if idle_action:
-                            threading.Thread(target=robot.perform_action, args=(idle_action,)).start()
-                    last_interaction_time = time.time()
-                    idle_threshold = random.randint(10, 20)
+                    except Exception:
+                        pass
 
         time.sleep(0.02)
 
 
 if __name__ == "__main__":
+    _client = OpenAI(api_key="sk-lw29XaxfVg9MPVza2678Bd193b7248EeB6BbD65529459546",
+                     base_url="https://api.rcouyi.com/v1")
     t_flask = threading.Thread(target=run_flask, daemon=True)
     t_flask.start()
-
     try:
         main_loop()
     except KeyboardInterrupt:
-        ears.stop()  # 记得关闭耳朵线程
-        print("Stopping...")
+        ears.stop()

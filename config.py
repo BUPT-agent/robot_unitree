@@ -10,9 +10,13 @@ LLM_BASE_URL = "https://api.rcouyi.com/v1" # 或你的本地/中转地址
 LLM_MODEL = "gpt-4o" # 或你的模型名
 
 # === 语音交互配置 ===
-WAKE_WORDS = ["小助手", "嘿", "hello", "你好"]
-INTERRUPT_KEYWORDS = ["别说了", "停止", "闭嘴", "停"]
+WAKE_WORDS = ["你好", "桂小志", "guixiaozhi", "guixiaozi"]
 VOSK_MODEL_PATH = "model"
+IS_LLM_CHECK = True
+
+# api 设置
+url = "https://gzybot.wenhuaguangxi.com:40509/sse/app-api/tts/speakToLLmV3"
+sessionId = "375b3965-bad7-40c2-8586-be1432949277"
 
 # === 动作定义 (ACTION_MAP) ===
 # 大模型根据 "desc" 来判断用户意图，并返回对应的 Key (数字 ID)
@@ -28,10 +32,10 @@ ACTION_MAP = {
     8:  {"group": "arm", "name": "release arm",   "desc": "放下手/松手/放松手臂"},
 
     # --- Locomotion Actions (运动/姿态) ---
-    # 9:  {"group": "loco", "name": "Squat2StandUp", "desc": "站起来/起立"},
-    # 10: {"group": "loco", "name": "StandUp2Squat", "desc": "蹲下/下蹲"},
-    # 11: {"group": "loco", "name": "low stand",     "desc": "低站姿/低姿态"},
-    # 12: {"group": "loco", "name": "high stand",    "desc": "高站姿/高姿态"},
+    9:  {"group": "loco", "name": "Squat2StandUp", "desc": "站起来/起立"},
+    10: {"group": "loco", "name": "StandUp2Squat", "desc": "蹲下/下蹲"},
+    11: {"group": "loco", "name": "low stand",     "desc": "低站姿/低姿态"},
+    12: {"group": "loco", "name": "high stand",    "desc": "高站姿/高姿态"},
     13: {"group": "loco", "name": "move forward",  "desc": "前进/往前走/向前"},
     14: {"group": "loco", "name": "move lateral",  "desc": "横移/左移/右移/侧移"},
     15: {"group": "loco", "name": "move rotate",   "desc": "转圈/旋转/原地转"},
@@ -42,16 +46,10 @@ ACTION_MAP = {
     # 20: {"group": "loco", "name": "Lie2StandUp",   "desc": "躺倒起立/起身/鲤鱼打挺"},
 }
 
-# === 定义填空词列表 (放在 main_loop 外面或 config 里均可) ===
-# 这些词简短且自然，用于填补 LLM 思考的 1-3 秒空白
-FILLER_PHRASES = [
-    "收到指令",
-]
-
 def get_action_prompt_text():
     """生成给大模型的提示词文本"""
     prompt = "【可用动作列表】\n"
     for aid, info in ACTION_MAP.items():
         prompt += f"- ID {aid}: {info['desc']}\n"
-        print(prompt)
+    # print(prompt)
     return prompt

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>G1 机器人指挥中心 (Hybrid)</title>
+    <title>G1 机器人指挥中心 v2.6</title>
     <style>
         :root {
             --bg-color: #0a0b10;
@@ -162,18 +162,12 @@
             color: var(--accent-cyan);
             border-bottom: 2px solid var(--accent-cyan);
         }
-
-        /* 模式指示器 */
-        .mode-indicator {
-            padding: 10px;
-            font-size: 0.8rem;
-            text-align: center;
-            background: rgba(0,0,0,0.2);
-            border-bottom: 1px solid var(--border-color);
-            color: #888;
+        .mode-btn.loading {
+            cursor: wait;
+            opacity: 0.7;
+            animation: pulse 1s infinite;
         }
-        .mode-indicator.active-auto { color: var(--accent-green); }
-        .mode-indicator.active-director { color: var(--accent-cyan); }
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
 
         /* --- 内容区域 --- */
         .tabs { display: flex; border-bottom: 1px solid var(--border-color); }
@@ -240,7 +234,7 @@
 
         .action-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
             gap: 15px;
         }
         .action-btn {
@@ -257,42 +251,52 @@
             align-items: center;
             justify-content: center;
             gap: 5px;
+            position: relative;
         }
         .action-btn:hover {
             border-color: var(--accent-cyan);
             color: var(--accent-cyan);
             background: rgba(0, 243, 255, 0.05);
         }
+        /* 编辑模式下的样式调整 */
+        .action-btn.editable {
+            border-style: dashed;
+        }
+        .action-btn.editing-active {
+            border-color: var(--accent-green);
+            background: rgba(10, 255, 0, 0.1);
+            box-shadow: 0 0 10px rgba(10, 255, 0, 0.2);
+        }
+        .delete-badge {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            width: 20px;
+            height: 20px;
+            background: var(--accent-red);
+            color: white;
+            border-radius: 50%;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
         .action-icon { font-size: 1.5rem; margin-bottom: 5px; }
 
         .section-label {
             font-size: 0.8rem;
             color: var(--text-dim);
-            margin: 15px 0 10px 0;
+            margin: 20px 0 10px 0;
             border-left: 2px solid var(--accent-cyan);
             padding-left: 10px;
             text-transform: uppercase;
         }
+        .section-label:first-child { margin-top: 0; }
 
-        /* --- 日志 --- */
-        .history-list { overflow-y: auto; flex: 1; padding: 10px; }
-        .log-item {
-            padding: 10px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            font-size: 0.9rem;
-            display: flex;
-            gap: 10px;
-        }
-        .log-time { color: var(--text-dim); font-size: 0.75rem; white-space: nowrap; }
-        .log-content { color: #fff; line-height: 1.4; word-break: break-all; }
-        .log-tag {
-            font-size: 0.7rem; padding: 2px 6px; border-radius: 3px;
-            background: #333; height: fit-content; white-space: nowrap;
-        }
-        .log-tag.ai { background: #2a2; color: #fff; }
-        .log-tag.user { background: #0aa; color: #000; }
-
-        /* --- 文件上传 --- */
+        /* --- 上传控件样式 --- */
         .upload-box {
             border: 2px dashed var(--border-color);
             border-radius: 6px;
@@ -301,9 +305,49 @@
             cursor: pointer;
             transition: 0.2s;
             margin-bottom: 15px;
+            background: rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
-        .upload-box:hover { border-color: var(--accent-green); color: var(--accent-green); }
+        .upload-box:hover { border-color: var(--accent-green); color: var(--accent-green); background: rgba(10, 255, 0, 0.05); }
         .file-input { display: none; }
+
+        /* --- 日志 --- */
+        .history-list { overflow-y: auto; flex: 1; padding: 10px; }
+        .log-item {
+            padding: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.9rem;
+            animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        .log-time { color: var(--text-dim); font-size: 0.75rem; margin-bottom: 3px; display: inline-block; width: 60px;}
+        .log-content { color: #fff; display: inline-block; }
+        .log-type-cmd { color: var(--accent-cyan); }
+        .log-type-err { color: var(--accent-red); }
+
+        /* --- 遮罩层 --- */
+        .disabled-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(10, 11, 16, 0.85);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+            font-size: 1.2rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-align: center;
+            gap: 15px;
+            border-radius: 6px;
+        }
 
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #000; }
@@ -340,10 +384,11 @@
 </head>
 <body>
 
+<!-- 设置弹窗 -->
 <div id="settings-modal" class="settings-modal">
     <div class="settings-box">
         <h3 style="margin-top:0; color:var(--accent-cyan);">API 连接设置</h3>
-        <p style="font-size:0.8rem; color:#888;">CORS 跨域警告：请确保后端已启用 flask-cors</p>
+        <p style="font-size:0.8rem; color:#888;">由于浏览器的安全限制(CORS)，本地 HTML 文件可能无法直接连接后端。请确认后端地址。</p>
         <label style="font-size:0.9rem;">后端地址 (例如 http://127.0.0.1:5000)</label>
         <input type="text" id="api-url-input" class="settings-input" value="http://127.0.0.1:5000">
         <div style="display:flex; justify-content:flex-end; gap:10px;">
@@ -354,7 +399,7 @@
 </div>
 
 <header>
-    <div class="brand">Unitree G1 <span style="font-size:0.5em; opacity:0.6; vertical-align: middle;">// COMMAND SYSTEM</span></div>
+    <div class="brand">Unitree G1 <span style="font-size:0.5em; opacity:0.6; vertical-align: middle;">// COMMAND V2.6</span></div>
 
     <div class="header-controls">
         <div class="status-pill">
@@ -367,74 +412,93 @@
 
 <div class="main-container">
 
+    <!-- 左侧：模式与紧急控制 -->
     <div class="side-panel">
         <div class="card">
             <div class="card-header">Control Mode</div>
             <div class="mode-group">
                 <div id="btn-auto" class="mode-btn active" onclick="requestModeChange('auto')">
                     <div>AUTO</div>
-                    <div style="font-size:0.7em; opacity:0.6;">AI 托管 + 麦克风</div>
+                    <div style="font-size:0.7em; opacity:0.6;">AI 语音托管</div>
                 </div>
                 <div id="btn-director" class="mode-btn" onclick="requestModeChange('director')">
                     <div>DIRECTOR</div>
-                    <div style="font-size:0.7em; opacity:0.6;">仅人工指令</div>
+                    <div style="font-size:0.7em; opacity:0.6;">人工指令</div>
                 </div>
             </div>
-            <div id="mode-desc" class="mode-indicator active-auto">
-                <span id="mode-icon">🎤</span>
-                <span id="mode-text">机器人正在监听环境声音...</span>
-            </div>
-
             <div style="padding: 15px;">
                 <button class="btn btn-stop" onclick="sendStop()">
-                    ⚠ 强制打断 / 停止 (STOP)
+                    ⚠ 紧急停止 (STOP)
                 </button>
             </div>
         </div>
 
         <div class="card card-full">
             <div class="card-header">
-                Interactive Logs
-                <span style="cursor:pointer; font-size:1.2em;" onclick="loadHistory()">⟳</span>
+                Operation Logs
+                <div style="font-size:0.7em; text-transform:none;">(Local)</div>
             </div>
             <div id="log-container" class="history-list">
-                </div>
+                <!-- Local Logs go here -->
+                <div style="padding:10px; color:#555; text-align:center;">暂无操作记录</div>
+            </div>
         </div>
     </div>
 
+    <!-- 中间：功能控制区 -->
     <div class="center-panel">
         <div class="card card-full" style="position: relative;">
 
+            <!-- 自动模式下的遮罩 -->
+            <div id="director-overlay" class="disabled-overlay">
+                <div style="font-size: 3rem; margin-bottom: 10px;">🔒</div>
+                <div>系统处于自动托管模式 (AI)</div>
+                <div style="font-size:0.7em; opacity:0.7;">请在左侧切换至 "DIRECTOR" 模式以操作</div>
+            </div>
+
             <div class="tabs">
                 <div class="tab active" onclick="switchTab('tab-tts')">语音广播 (TTS)</div>
-                <div class="tab" onclick="switchTab('tab-action')">动作干预 (Action)</div>
-                <div class="tab" onclick="switchTab('tab-audio')">音频文件 (WAV)</div>
+                <div class="tab" onclick="switchTab('tab-action')">动作控制 (Action)</div>
+                <div class="tab" onclick="switchTab('tab-audio')">音频播放 (WAV)</div>
             </div>
 
+            <!-- Tab 1: TTS -->
             <div id="tab-tts" class="tab-content show">
-                <div class="section-label">发送指定语音 (最高优先级)</div>
-                <div style="font-size: 0.8rem; color: #888; margin-bottom: 10px;">
-                    即使在 Auto 模式下，此处发送的文字也会强制机器人立即播报。
-                </div>
-                <textarea id="tts-input" placeholder="输入你想让机器人说的话... (例如: 欢迎各位领导莅临参观)"></textarea>
+                <div class="section-label">发送语音指令</div>
+                <textarea id="tts-input" placeholder="在此输入文字，机器人将通过 TTS 播报..."></textarea>
                 <div style="display: flex; justify-content: flex-end;">
-                    <button class="btn btn-cyan" onclick="sendSpeak()">⚡ 立即发送 (SPEAK)</button>
+                    <button class="btn btn-cyan" onclick="sendSpeak()">发送语音 (SPEAK)</button>
                 </div>
 
-                <div class="section-label">常用短语</div>
-                <div class="action-grid">
-                    <div class="action-btn" onclick="fillAndSend('大家好，我是Unitree G1机器人。')">自我介绍</div>
-                    <div class="action-btn" onclick="fillAndSend('我正在思考中，请稍等。')">思考中</div>
-                    <div class="action-btn" onclick="fillAndSend('好的，动作已执行完毕。')">动作完成</div>
-                    <div class="action-btn" onclick="fillAndSend('请问需要我展示什么才艺？')">引导互动</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin: 20px 0 10px 0;">
+                    <div class="section-label" style="margin:0;">快捷短语</div>
+                    <button class="settings-btn" onclick="toggleEditMode()" title="管理短语" style="font-size:1rem; border:none;">⚙️ 管理</button>
+                </div>
+
+                <!-- 编辑区域 (默认隐藏) -->
+                <div id="edit-controls" style="display:none; background:rgba(255,255,255,0.03); padding:15px; border-radius:4px; margin-bottom:15px; border:1px dashed var(--border-color);">
+                    <div style="font-size:0.8rem; color:#888; margin-bottom:10px;" id="edit-title">添加新短语:</div>
+                    <div style="display:flex; gap:10px; margin-bottom:10px;">
+                        <input id="new-phrase-label" placeholder="按钮标签 (如: 6.再见)" style="flex:1; background:#000; border:1px solid #333; color:#fff; padding:8px; font-family:inherit;">
+                        <input id="new-phrase-text" placeholder="完整语音内容..." style="flex:2; background:#000; border:1px solid #333; color:#fff; padding:8px; font-family:inherit;">
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                        <button id="save-phrase-btn" class="btn btn-cyan" style="flex:1; padding:8px; font-size:0.8rem;" onclick="handleSavePhrase()">+ 确认添加</button>
+                        <button id="cancel-edit-btn" class="btn" style="display:none; flex:0 0 80px; background:#333; padding:8px; font-size:0.8rem;" onclick="resetEditState()">取消</button>
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--accent-red); margin-top:10px; text-align:center;">
+                        提示: 点击下方短语可【编辑内容】，点击红色角标可【删除】
+                    </div>
+                </div>
+
+                <div id="quick-phrases-list" class="action-grid">
+                    <!-- Javascript generated content -->
                 </div>
             </div>
 
+            <!-- Tab 2: Actions (Updated based on config.py) -->
             <div id="tab-action" class="tab-content">
-                <div class="section-label">手动触发动作 (辅助 AI)</div>
-                <div style="font-size: 0.8rem; color: #888; margin-bottom: 10px;">
-                    AI 会自动判断动作，但你也可以在此手动触发。
-                </div>
+                <div class="section-label">基础姿态 (Locomotion)</div>
                 <div class="action-grid">
                     <div class="action-btn" onclick="sendAction('loco', 'StandUp2Squat')">
                         <div class="action-icon">⬇</div>蹲下
@@ -442,30 +506,58 @@
                     <div class="action-btn" onclick="sendAction('loco', 'Squat2StandUp')">
                         <div class="action-icon">⬆</div>站起
                     </div>
-                    <div class="action-btn" onclick="sendAction('loco', 'damp')">
-                        <div class="action-icon">⛔</div>阻尼/放松
+                     <div class="action-btn" onclick="sendAction('loco', 'low stand')">
+                        <div class="action-icon">📏</div>低站姿
                     </div>
-                    <div class="action-btn" onclick="sendAction('arm', 'shake hand')">
-                        <div class="action-icon">🤝</div>握手
+                    <div class="action-btn" onclick="sendAction('loco', 'high stand')">
+                        <div class="action-icon">📐</div>高站姿
                     </div>
-                    <div class="action-btn" onclick="sendAction('arm', 'high wave')">
-                        <div class="action-icon">👋</div>挥手
-                    </div>
-                    <div class="action-btn" onclick="sendAction('arm', 'heart')">
-                        <div class="action-icon">❤️</div>比心
+                     <div class="action-btn" onclick="sendAction('loco', 'damp')">
+                        <div class="action-icon">⛔</div>阻尼(软)
                     </div>
                 </div>
+
+                <div class="section-label">移动测试 (慎用)</div>
+                <div class="action-grid">
+                    <div class="action-btn" onclick="sendAction('loco', 'move forward')">向前一步</div>
+                    <div class="action-btn" onclick="sendAction('loco', 'move lateral')">左右横移</div>
+                    <div class="action-btn" onclick="sendAction('loco', 'move rotate')">原地旋转</div>
+                </div>
+
+                <div class="section-label">社交动作 (Arm)</div>
+                <div class="action-grid">
+                    <div class="action-btn" onclick="sendAction('arm', 'shake hand')">🤝 握手</div>
+                    <div class="action-btn" onclick="sendAction('arm', 'high wave')">👋 挥手</div>
+                    <div class="action-btn" onclick="sendAction('arm', 'heart')">❤️ 比心</div>
+                    <div class="action-btn" onclick="sendAction('arm', 'high five')">✋ 击掌</div>
+                    <div class="action-btn" onclick="sendAction('arm', 'clap')">👏 鼓掌</div>
+                    <div class="action-btn" onclick="sendAction('arm', 'hug')">🤗 拥抱</div>
+                    <div class="action-btn" onclick="sendAction('arm', 'hands up')">🙌 举手</div>
+                    <div class="action-btn" onclick="sendAction('arm', 'release arm')">🔓 放松手臂</div>
+                </div>
+                 <div class="section-label">其他</div>
+                 <div class="action-grid">
+                     <div class="action-btn" onclick="sendAction('loco', 'wave hand1')">摆手 1</div>
+                     <div class="action-btn" onclick="sendAction('loco', 'wave hand2')">摆手 2</div>
+                 </div>
             </div>
 
+             <!-- Tab 3: Audio (新增) -->
             <div id="tab-audio" class="tab-content">
                 <div class="section-label">上传并播放 WAV 文件</div>
                 <label class="upload-box">
-                    <div id="file-label" style="font-size: 1.2rem; font-weight: bold;">点击选择文件 (.wav)</div>
-                    <div style="font-size: 0.8rem; margin-top: 10px; color: #666;">支持格式: PCM WAV, 16k/44.1k</div>
+                    <div style="font-size: 3rem; color: var(--text-dim);">♫</div>
+                    <div id="file-label" style="font-size: 1.1rem; font-weight: bold;">点击选择文件 (.wav)</div>
+                    <div style="font-size: 0.8rem; margin-top: 5px; color: #666;">支持格式: PCM WAV, 16k/44.1k</div>
                     <input type="file" id="wav-file" class="file-input" accept=".wav" onchange="handleFileSelect()">
                 </label>
                 <div style="display: flex; justify-content: flex-end;">
-                    <button class="btn btn-cyan" style="background: var(--accent-green);" onclick="uploadAndPlay()">上传并播放</button>
+                    <button class="btn btn-cyan" style="background: var(--accent-green);" onclick="uploadAndPlay()">上传并自动播放</button>
+                </div>
+                <div class="section-label" style="margin-top: 30px;">说明</div>
+                <div style="color: #666; font-size: 0.85rem; line-height: 1.5;">
+                    文件将上传至运行机器人的电脑并直接播放。<br>
+                    请确保文件格式为标准的 WAV 格式，否则机器人可能无法发声。
                 </div>
             </div>
 
@@ -476,8 +568,23 @@
 <script>
     // --- 核心配置 ---
     let API_BASE = localStorage.getItem('G1_API_URL') || 'http://127.0.0.1:5000';
-    let currentMode = 'auto'; // 默认为 auto
+    let currentMode = 'auto';
     let isOffline = true;
+
+    // --- 短语管理逻辑 ---
+    // 默认短语数据 (v2)
+    const DEFAULT_PHRASES = [
+        { label: "欢迎词", text: "我是桂小志，有什么问题都可以问我" },
+        { label: "1、想去东南亚", text: "晓旭姐姐，我也想去东南亚，我也想去做志愿者，我听说去东南亚可好玩儿了。" },
+        { label: "2、连线陆宇", text: "太好了，听说前段时间，我们的志愿者陆宇小姐姐已经到了柬埔寨，要不要我们现在与她打个视频电话。" },
+        { label: "3、祝顺利", text: "8 8，陆宇小姐姐，希望你们在柬埔寨一切顺利。" },
+        { label: "4、加入桂志愿", text: "我们都是志愿者，请加入“桂志愿”，与我们共同收获向上向善的力量。" },
+        { label: "5、祝志愿者", text: "最后，祝所有的志愿者朋友们：" }
+    ];
+
+    let quickPhrases = [];
+    let isEditMode = false;
+    let editingIndex = -1; // -1 表示添加模式，其他值表示正在编辑该索引
 
     // --- 设置逻辑 ---
     function openSettings() {
@@ -492,31 +599,29 @@
         API_BASE = newUrl;
         localStorage.setItem('G1_API_URL', newUrl);
         closeSettings();
-        alert("地址已更新，正在重连...");
         pingStatus();
     }
 
-    async function safeFetch(endpoint, options = {}) {
+    // --- 网络请求封装 (已修复) ---
+    async function safeFetch(endpoint, options = {}, suppressError = false) {
         const url = `${API_BASE}${endpoint}`;
-        // 预览环境拦截
-        if (window.location.protocol === 'blob:' || window.location.host.includes('content')) {
-            console.warn("Detected preview environment, blocking local request.");
-            return { ok: false, status: 0, isPreview: true };
-        }
         try {
-            return await fetch(url, options);
+            const res = await fetch(url, options);
+            return res;
         } catch (error) {
-            console.error(`Fetch Error:`, error);
+            if (!suppressError) {
+                console.error(`Fetch Error [${url}]:`, error);
+            }
             return { ok: false, status: 0, error: error };
         }
     }
 
     // --- 初始化 ---
     window.onload = function() {
-        updateUIState('auto'); // 默认显示为 Auto
-        loadHistory();
+        updateUIState('auto');
+        initPhrases(); // 初始化短语
         pingStatus();
-        setInterval(pingStatus, 2000);
+        setInterval(pingStatus, 2000); // 2秒心跳
     };
 
     function switchTab(tabId) {
@@ -524,11 +629,10 @@
         document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
         document.getElementById(tabId).classList.add('show');
 
-        // 简单映射激活状态
         const tabs = document.querySelectorAll('.tab');
-        if(tabId === 'tab-tts') tabs[0].classList.add('active');
-        if(tabId === 'tab-action') tabs[1].classList.add('active');
-        if(tabId === 'tab-audio') tabs[2].classList.add('active');
+        tabs[0].classList.toggle('active', tabId === 'tab-tts');
+        tabs[1].classList.toggle('active', tabId === 'tab-action');
+        tabs[2].classList.toggle('active', tabId === 'tab-audio');
     }
 
     // --- 模式切换 ---
@@ -538,6 +642,7 @@
         const btn = document.getElementById(newMode === 'auto' ? 'btn-auto' : 'btn-director');
         const originalText = btn.innerHTML;
         btn.innerHTML = `<div>切换中...</div>`;
+        btn.classList.add('loading');
 
         const res = await safeFetch('/api/set_mode', {
             method: 'POST',
@@ -545,44 +650,28 @@
             body: JSON.stringify({mode: newMode})
         });
 
+        btn.classList.remove('loading');
         btn.innerHTML = originalText;
 
         if (res.ok) {
             updateUIState(newMode);
+            addLog(`切换模式: ${newMode.toUpperCase()}`, 'cmd');
         } else {
             handleError(res, "切换模式失败");
         }
     }
 
-    // 更新 UI 状态：现在 Auto 模式不再锁定界面
     function updateUIState(mode) {
         currentMode = mode;
-
-        // 1. 按钮高亮
         document.getElementById('btn-auto').className = `mode-btn ${mode === 'auto' ? 'active' : ''}`;
         document.getElementById('btn-director').className = `mode-btn ${mode === 'director' ? 'active' : ''}`;
-
-        // 2. 更新下方状态文字
-        const descDiv = document.getElementById('mode-desc');
-        const iconSpan = document.getElementById('mode-icon');
-        const textSpan = document.getElementById('mode-text');
-
-        if (mode === 'auto') {
-            descDiv.className = "mode-indicator active-auto";
-            iconSpan.innerText = "🎤";
-            textSpan.innerText = "麦克风已开启 | 允许手动插播指令";
-        } else {
-            descDiv.className = "mode-indicator active-director";
-            iconSpan.innerText = "🔇";
-            textSpan.innerText = "麦克风已关闭 | 仅响应手动指令";
-        }
-
-        // 注意：这里删除了遮罩层的显示逻辑，实现了“手动指令在自动模式下可用”
+        const overlay = document.getElementById('director-overlay');
+        overlay.style.display = (mode === 'auto') ? 'flex' : 'none';
     }
 
-    // --- 状态轮询 ---
+    // --- 心跳检测 ---
     async function pingStatus() {
-        const res = await safeFetch('/api/status');
+        const res = await safeFetch('/api/status', {}, true);
         const dot = document.getElementById('status-dot');
         const text = document.getElementById('status-text');
 
@@ -592,7 +681,7 @@
 
             if (data.is_replying) {
                 dot.className = 'status-dot busy';
-                text.innerText = "AI 思考/回复中...";
+                text.innerText = "机器人忙碌中...";
                 text.style.color = "var(--accent-yellow)";
             } else {
                 dot.className = 'status-dot active';
@@ -611,16 +700,14 @@
         }
     }
 
+    // --- 错误处理 ---
     function handleError(res, context) {
-        if(!isOffline) {
-            console.warn(context, res);
-            alert(`${context}: 连接失败或被拒绝`);
-        }
+        let msg = `${context} (Error: ${res.status || 'Connect Failed'})`;
+        console.warn(msg);
+        addLog(msg, 'err');
     }
 
-    // --- 核心功能：发送指令 ---
-    // 这个函数会调用后端的 /api/director/speak
-    // 即使在 auto 模式下，只要后端的 main_loop 先检查 director_queue，这个指令就会被优先执行
+    // --- 指令发送 ---
     async function sendSpeak() {
         const input = document.getElementById('tts-input');
         const text = input.value.trim();
@@ -633,29 +720,39 @@
         });
 
         if(res.ok) {
+            const displayText = text.length > 15 ? text.substring(0, 15) + "..." : text;
+            addLog(`发送语音: "${displayText}"`, 'cmd');
             input.value = '';
-            // 稍后刷新日志
-            setTimeout(loadHistory, 500);
         } else {
             handleError(res, "发送 TTS 失败");
         }
     }
 
     function fillAndSend(text) {
+        if(isEditMode) return; // 编辑模式下禁止点击发送
         document.getElementById('tts-input').value = text;
         sendSpeak();
     }
 
     async function sendAction(group, name) {
+        addLog(`发送动作: ${name} (${group})`, 'cmd');
         const res = await safeFetch('/api/director/action', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ group: group, name: name })
         });
+
         if (!res.ok) handleError(res, "发送动作失败");
     }
 
-    // --- 文件处理 ---
+    async function sendStop() {
+        addLog("⚠ 发送紧急停止指令", 'err');
+        await safeFetch('/api/interrupt', {method: 'POST'});
+        document.body.style.transform = "translateX(5px)";
+        setTimeout(() => document.body.style.transform = "none", 50);
+    }
+
+    // --- 文件上传逻辑 ---
     function handleFileSelect() {
         const input = document.getElementById('wav-file');
         if(input.files[0]) {
@@ -667,11 +764,12 @@
     async function uploadAndPlay() {
         const input = document.getElementById('wav-file');
         if (!input.files[0]) return alert("请先选择一个 WAV 文件");
+        addLog(`正在上传: ${input.files[0].name}...`, 'cmd');
         const formData = new FormData();
         formData.append('file', input.files[0]);
         const res = await safeFetch('/api/director/upload_play', { method: 'POST', body: formData });
         if (res.ok) {
-            alert("播放请求已发送");
+            addLog(`上传成功，正在播放音频`, 'cmd');
             input.value = '';
             document.getElementById('file-label').innerText = "点击选择文件 (.wav)";
             document.getElementById('file-label').style.color = 'inherit';
@@ -680,36 +778,150 @@
         }
     }
 
-    async function sendStop() {
-        await safeFetch('/api/interrupt', {method: 'POST'});
-        document.body.style.transform = "translateX(5px)";
-        setTimeout(() => document.body.style.transform = "none", 50);
+    // --- 动态短语管理功能 ---
+    function initPhrases() {
+        const stored = localStorage.getItem('g1_quick_phrases_v2');
+        if (stored) {
+            try {
+                quickPhrases = JSON.parse(stored);
+            } catch(e) {
+                quickPhrases = DEFAULT_PHRASES;
+            }
+        } else {
+            quickPhrases = [...DEFAULT_PHRASES];
+        }
+        renderPhrases();
     }
 
-    async function loadHistory() {
-        const res = await safeFetch('/api/history');
-        if (res.ok) {
-            const data = await res.json();
-            const container = document.getElementById('log-container');
-            container.innerHTML = '';
+    function savePhrases() {
+        localStorage.setItem('g1_quick_phrases_v2', JSON.stringify(quickPhrases));
+        renderPhrases();
+    }
 
-            if (data.texts && data.texts.length > 0) {
-                [...data.texts].reverse().forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'log-item';
+    function toggleEditMode() {
+        isEditMode = !isEditMode;
+        document.getElementById('edit-controls').style.display = isEditMode ? 'block' : 'none';
+        resetEditState(); // 每次开关都重置状态
+        renderPhrases();
+    }
 
-                    // 简单的判断：如果是用户手动发的指令，可以标不同颜色（这里暂时统一样式）
-                    // 实际项目中可以根据 item 里的 source 字段区分 AI 还是 User
-                    div.innerHTML = `
-                        <div class="log-time">${item.time}</div>
-                        <div class="log-content">${item.content}</div>
-                    `;
-                    container.appendChild(div);
-                });
-            } else {
-                container.innerHTML = '<div style="padding:20px; color:#555; text-align:center;">暂无记录</div>';
-            }
+    function resetEditState() {
+        editingIndex = -1;
+        document.getElementById('new-phrase-label').value = '';
+        document.getElementById('new-phrase-text').value = '';
+        document.getElementById('save-phrase-btn').innerText = "+ 确认添加";
+        document.getElementById('save-phrase-btn').className = "btn btn-cyan";
+        document.getElementById('cancel-edit-btn').style.display = 'none';
+        document.getElementById('edit-title').innerText = "添加新短语:";
+        renderPhrases(); // 刷新以移除选中高亮
+    }
+
+    function startEditing(index) {
+        editingIndex = index;
+        const p = quickPhrases[index];
+        document.getElementById('new-phrase-label').value = p.label;
+        document.getElementById('new-phrase-text').value = p.text;
+
+        // 更新界面状态
+        document.getElementById('save-phrase-btn').innerText = "💾 保存修改";
+        document.getElementById('save-phrase-btn').className = "btn btn-cyan";
+        document.getElementById('cancel-edit-btn').style.display = 'block';
+        document.getElementById('edit-title').innerText = `正在编辑: ${p.label}`;
+
+        renderPhrases(); // 刷新高亮
+    }
+
+    function handleSavePhrase() {
+        const labelInput = document.getElementById('new-phrase-label');
+        const textInput = document.getElementById('new-phrase-text');
+        const label = labelInput.value.trim();
+        const text = textInput.value.trim();
+
+        if (!label || !text) {
+            alert("请填写标签和完整内容");
+            return;
         }
+
+        if (editingIndex > -1) {
+            // 修改现有
+            quickPhrases[editingIndex] = { label, text };
+            addLog(`修改短语: ${label}`, 'cmd');
+        } else {
+            // 添加新
+            quickPhrases.push({ label, text });
+            addLog(`添加短语: ${label}`, 'cmd');
+        }
+
+        savePhrases();
+        resetEditState();
+    }
+
+    function deletePhrase(index) {
+        if (!confirm("确定要删除这个短语吗？")) return;
+
+        // 如果删除的是当前正在编辑的，重置编辑状态
+        if (index === editingIndex) {
+            resetEditState();
+        } else if (index < editingIndex) {
+            editingIndex--; // 索引移位修正
+        }
+
+        quickPhrases.splice(index, 1);
+        savePhrases();
+        addLog(`删除短语 (Index: ${index})`, 'cmd');
+    }
+
+    function renderPhrases() {
+        const container = document.getElementById('quick-phrases-list');
+        container.innerHTML = '';
+
+        quickPhrases.forEach((p, index) => {
+            const div = document.createElement('div');
+            // 添加基础类
+            let cssClass = 'action-btn';
+            if (isEditMode) cssClass += ' editable';
+            if (index === editingIndex) cssClass += ' editing-active';
+            div.className = cssClass;
+
+            // 点击事件逻辑
+            if (!isEditMode) {
+                // 正常模式：点击发送
+                div.onclick = () => fillAndSend(p.text);
+            } else {
+                // 编辑模式：点击进入编辑
+                div.onclick = () => startEditing(index);
+            }
+
+            // 构造 HTML
+            let html = `<div>${p.label}</div>`;
+            if (isEditMode) {
+                html += `<div class="delete-badge" onclick="event.stopPropagation(); deletePhrase(${index})">×</div>`;
+            }
+
+            div.innerHTML = html;
+            container.appendChild(div);
+        });
+    }
+
+    // --- 本地日志系统 ---
+    function addLog(message, type = 'norm') {
+        const container = document.getElementById('log-container');
+        if (container.children.length === 1 && container.children[0].innerText === "暂无操作记录") {
+            container.innerHTML = '';
+        }
+
+        const div = document.createElement('div');
+        div.className = 'log-item';
+
+        const timeStr = new Date().toLocaleTimeString('zh-CN', {hour12: false});
+        const typeClass = type === 'cmd' ? 'log-type-cmd' : (type === 'err' ? 'log-type-err' : '');
+
+        div.innerHTML = `
+            <span class="log-time">[${timeStr}]</span>
+            <span class="log-content ${typeClass}">${message}</span>
+        `;
+
+        container.insertBefore(div, container.firstChild);
     }
 </script>
 </body>
