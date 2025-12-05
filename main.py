@@ -146,7 +146,7 @@ def main_loop():
 
 
 if __name__ == "__main__":
-    _client = OpenAI(api_key="sk-lw29XaxfVg9MPVza2678Bd193b7248EeB6BbD65529459546",
+    _client = OpenAI(api_key="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
                      base_url="https://api.rcouyi.com/v1")
     t_flask = threading.Thread(target=run_flask, daemon=True)
     t_flask.start()
