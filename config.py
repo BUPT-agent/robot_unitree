@@ -15,8 +15,8 @@ VOSK_MODEL_PATH = "model"
 IS_LLM_CHECK = True
 
 # api 设置
-url = "https://gzybot.wenhuaguangxi.com:40509/sse/app-api/tts/speakToLLmV3"
-sessionId = "375b3965-bad7-40c2-8586-be1432949277"
+url = "https://gzybot.wenhuaguangxi.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+sessionId = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx"
 
 # === 动作定义 (ACTION_MAP) ===
 # 大模型根据 "desc" 来判断用户意图，并返回对应的 Key (数字 ID)
